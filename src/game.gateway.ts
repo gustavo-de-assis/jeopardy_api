@@ -9,6 +9,7 @@ import { Server, Socket } from 'socket.io';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { GameSession } from './schemas/game-session.schema';
+import { GameSessionService } from './game-session.service';
 
 @WebSocketGateway({ cors: true })
 export class GameGateway {
@@ -17,6 +18,7 @@ export class GameGateway {
 
     constructor(
         @InjectModel(GameSession.name) private gameSessionModel: Model<GameSession>,
+        private gameSessionService: GameSessionService,
     ) { }
 
     @SubscribeMessage('join_room')
@@ -26,22 +28,23 @@ export class GameGateway {
     ) {
         const { roomCode, playerName } = data;
 
-        // Find or create session
-        let session = await this.gameSessionModel.findOne({ roomCode });
-        if (!session) {
-            session = new this.gameSessionModel({ roomCode, players: [] });
-        }
+        try {
+            const session = await this.gameSessionService.addPlayer(roomCode, {
+                nickname: playerName,
+                socketId: client.id,
+            });
 
-        // Add player if not already in
-        const existingPlayer = session.players.find((p) => p.socketId === client.id);
-        if (!existingPlayer) {
-            session.players.push({ socketId: client.id, name: playerName });
-            await session.save();
-        }
+            if (!session) {
+                return { success: false, message: 'Room not found or invalid' };
+            }
 
-        client.join(roomCode);
-        this.server.to(roomCode).emit('player_joined', { playerName, totalPlayers: session.players.length });
-        return { success: true, message: `Joined room ${roomCode}` };
+            client.join(roomCode);
+            this.server.to(roomCode).emit('player_joined', { playerName, totalPlayers: session.players.length });
+            return { success: true, message: `Joined room ${roomCode}` };
+        } catch (error) {
+            console.error(error);
+            return { success: false, message: 'Failed to join room' };
+        }
     }
 
     @SubscribeMessage('buzz')
