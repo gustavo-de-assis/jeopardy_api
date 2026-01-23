@@ -10,6 +10,8 @@ import { UsersModule } from './users/users.module';
 import { CategoriesModule } from './categories/categories.module';
 import { QuestionsModule } from './questions/questions.module';
 
+import { GameSessionController } from './game-session.controller';
+
 @Module({
   imports: [
     MongooseModule.forRoot(process.env.MONGO_URI || 'mongodb://localhost/jeopardy'),
@@ -18,7 +20,7 @@ import { QuestionsModule } from './questions/questions.module';
     CategoriesModule,
     QuestionsModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, GameSessionController],
   providers: [AppService, GameSessionService, GameGateway],
 })
 export class AppModule { }

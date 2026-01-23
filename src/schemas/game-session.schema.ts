@@ -20,11 +20,25 @@ export class GameSession {
   ])
   players: { nickname: string; score: number; socketId: string }[];
 
-  @Prop({ default: false })
-  isLocked: boolean;
+  @Prop({ default: 'LOBBY' })
+  status: 'LOBBY' | 'PLAYING' | 'FINISHED';
 
-  @Prop({ default: null })
-  buzzedPlayerId: string;
+  @Prop({ type: [{ type: String, ref: 'Category' }] })
+  categories: string[];
+
+  @Prop({
+    type: {
+      questions: [{ type: Object }], // Store questions directly for performance/board state
+      buzzLocked: { type: Boolean, default: false },
+      buzzedPlayerId: { type: String, default: null },
+    },
+    default: { questions: [], buzzLocked: false, buzzedPlayerId: null },
+  })
+  gameState: {
+    questions: any[];
+    buzzLocked: boolean;
+    buzzedPlayerId: string | null;
+  };
 }
 
 export const GameSessionSchema = SchemaFactory.createForClass(GameSession);

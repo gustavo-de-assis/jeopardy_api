@@ -6,9 +6,6 @@ import {
     ConnectedSocket,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { GameSession } from './schemas/game-session.schema';
 import { GameSessionService } from './game-session.service';
 
 @WebSocketGateway({ cors: true })
@@ -17,29 +14,29 @@ export class GameGateway {
     server: Server;
 
     constructor(
-        @InjectModel(GameSession.name) private gameSessionModel: Model<GameSession>,
         private gameSessionService: GameSessionService,
     ) { }
 
     @SubscribeMessage('join_room')
     async handleJoinRoom(
-        @MessageBody() data: { roomCode: string; playerName: string },
+        @MessageBody() data: { roomCode: string; nickname: string },
         @ConnectedSocket() client: Socket,
     ) {
-        const { roomCode, playerName } = data;
+        const { roomCode, nickname } = data;
 
         try {
-            const session = await this.gameSessionService.addPlayer(roomCode, {
-                nickname: playerName,
-                socketId: client.id,
-            });
+            const session = await this.gameSessionService.addPlayer(roomCode, nickname, client.id);
 
             if (!session) {
                 return { success: false, message: 'Room not found or invalid' };
             }
 
             client.join(roomCode);
-            this.server.to(roomCode).emit('player_joined', { playerName, totalPlayers: session.players.length });
+            this.server.to(roomCode).emit('player_joined', {
+                nickname,
+                players: session.players
+            });
+
             return { success: true, message: `Joined room ${roomCode}` };
         } catch (error) {
             console.error(error);
@@ -53,21 +50,34 @@ export class GameGateway {
         @ConnectedSocket() client: Socket,
     ) {
         const { roomCode } = data;
-        const session = await this.gameSessionModel.findOne({ roomCode });
 
-        if (!session) {
-            return { success: false, message: 'Room not found' };
+        try {
+            const session = await this.gameSessionService.claimBuzz(roomCode, client.id);
+
+            if (!session) {
+                // Either room doesn't exist or someone else already buzzed
+                return { success: false, message: 'Buzz failed or already locked' };
+            }
+
+            // Emit to everyone in the room that we have a winner
+            this.server.to(roomCode).emit('buzz_winner', {
+                buzzedPlayerId: client.id,
+                nickname: session.players.find(p => p.socketId === client.id)?.nickname
+            });
+
+            return { success: true, message: 'Buzz registered' };
+        } catch (error) {
+            console.error(error);
+            return { success: false, message: 'Error processing buzz' };
         }
+    }
 
-        if (session.isLocked) {
-            return { success: false, message: 'Room already locked' };
-        }
-
-        session.isLocked = true;
-        session.buzzedPlayerId = client.id;
-        await session.save();
-
-        this.server.to(roomCode).emit('room_locked', { buzzedPlayerId: client.id });
-        return { success: true, message: 'Buzz registered' };
+    @SubscribeMessage('reset_buzz')
+    async handleResetBuzz(
+        @MessageBody() data: { roomCode: string },
+    ) {
+        const { roomCode } = data;
+        await this.gameSessionService.resetBuzz(roomCode);
+        this.server.to(roomCode).emit('buzz_reset');
     }
 }
