@@ -18,6 +18,10 @@ export class CategoriesService {
         return this.categoryModel.find({ isActive: true }).exec();
     }
 
+    async findByName(name: string): Promise<CategoryDocument | null> {
+        return this.categoryModel.findOne({ name }).exec();
+    }
+
     async seed(): Promise<string> {
         const count = await this.categoryModel.countDocuments();
         if (count > 0) {

@@ -8,6 +8,7 @@ import { GameSessionService } from './game-session.service';
 import { GameGateway } from './game.gateway';
 import { UsersModule } from './users/users.module';
 import { CategoriesModule } from './categories/categories.module';
+import { QuestionsModule } from './questions/questions.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { CategoriesModule } from './categories/categories.module';
     MongooseModule.forFeature([{ name: GameSession.name, schema: GameSessionSchema }]),
     UsersModule,
     CategoriesModule,
+    QuestionsModule,
   ],
   controllers: [AppController],
   providers: [AppService, GameSessionService, GameGateway],
