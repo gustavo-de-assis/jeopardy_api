@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Question, QuestionDocument } from '../schemas/question.schema';
 import { CategoriesService } from '../categories/categories.service';
 
@@ -17,8 +17,11 @@ export class QuestionsService {
     }
 
     async findByCategoryIds(categoryIds: string[]): Promise<QuestionDocument[]> {
+
+        const objectIds = categoryIds.map(id => new Types.ObjectId(id))
+
         return this.questionModel
-            .find({ categoryId: { $in: categoryIds } })
+            .find({ categoryId: { $in: objectIds } })
             .sort({ level: 1 })
             .populate('categoryId')
             .exec();
