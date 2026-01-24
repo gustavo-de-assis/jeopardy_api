@@ -19,10 +19,10 @@ export class GameGateway {
 
     @SubscribeMessage('join_room')
     async handleJoinRoom(
-        @MessageBody() data: { roomCode: string; nickname: string },
+        @MessageBody() data: { roomCode: string; nickname: string; userId?: string },
         @ConnectedSocket() client: Socket,
     ) {
-        const { roomCode, nickname } = data;
+        const { roomCode, nickname, userId } = data;
 
         try {
             const session = await this.gameSessionService.addPlayer(roomCode, nickname, client.id);
@@ -31,13 +31,16 @@ export class GameGateway {
                 return { success: false, message: 'Room not found or invalid' };
             }
 
+            const role = session.host === userId ? 'HOST' : 'PLAYER';
+
             client.join(roomCode);
             this.server.to(roomCode).emit('player_joined', {
                 nickname,
-                players: session.players
+                players: session.players,
+                role, // Provide context to listeners
             });
 
-            return { success: true, message: `Joined room ${roomCode}` };
+            return { success: true, message: `Joined room ${roomCode}`, role };
         } catch (error) {
             console.error(error);
             return { success: false, message: 'Failed to join room' };
