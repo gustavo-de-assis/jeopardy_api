@@ -129,6 +129,14 @@ export class GameSessionService {
         );
     }
 
+    async startGame(roomCode: string): Promise<GameSessionDocument | null> {
+        return this.gameSessionModel.findOneAndUpdate(
+            { roomCode },
+            { $set: { status: 'PLAYING' } },
+            { new: true },
+        );
+    }
+
     async resetBuzz(roomCode: string): Promise<GameSessionDocument | null> {
         return this.gameSessionModel.findOneAndUpdate(
             { roomCode },

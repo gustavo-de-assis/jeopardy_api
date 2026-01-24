@@ -130,4 +130,15 @@ export class GameGateway {
         await this.gameSessionService.resetBuzz(roomCode);
         this.server.to(roomCode).emit('buzz_reset');
     }
+
+    @SubscribeMessage('start_game')
+    async handleStartGame(
+        @MessageBody() data: { roomCode: string },
+    ) {
+        const { roomCode } = data;
+        const session = await this.gameSessionService.startGame(roomCode);
+        if (session) {
+            this.server.to(roomCode).emit('game_started');
+        }
+    }
 }
