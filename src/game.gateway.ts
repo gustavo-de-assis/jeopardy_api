@@ -141,4 +141,12 @@ export class GameGateway {
             this.server.to(roomCode).emit('game_started');
         }
     }
+
+    @SubscribeMessage('open_question')
+    async handleOpenQuestion(
+        @MessageBody() data: { roomCode: string, question: any },
+    ) {
+        const { roomCode, question } = data;
+        this.server.to(roomCode).emit('question_opened', question);
+    }
 }
