@@ -28,16 +28,16 @@ export class GameSession {
 
   @Prop({
     type: {
-      questions: [{ type: Object }], // Store questions directly for performance/board state
-      buzzLocked: { type: Boolean, default: false },
-      buzzedPlayerId: { type: String, default: null },
+      questions: [{ type: Object }],
+      buzzQueue: [{ type: String }],
+      answeringPlayerId: { type: String, default: null },
     },
-    default: { questions: [], buzzLocked: false, buzzedPlayerId: null },
+    default: { questions: [], buzzQueue: [], answeringPlayerId: null },
   })
   gameState: {
     questions: any[];
-    buzzLocked: boolean;
-    buzzedPlayerId: string | null;
+    buzzQueue: string[];
+    answeringPlayerId: string | null;
   };
 }
 

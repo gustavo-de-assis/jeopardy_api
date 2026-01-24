@@ -22,7 +22,6 @@ export class GameSessionService {
 
     async createSession(hostId: string): Promise<GameSessionDocument> {
         let roomCode = this.generateRoomCode();
-        // Ensure unique room code
         let existing = await this.gameSessionModel.findOne({ roomCode });
         while (existing) {
             roomCode = this.generateRoomCode();
@@ -35,7 +34,7 @@ export class GameSessionService {
             players: [],
             status: 'LOBBY',
             categories: [],
-            gameState: { questions: [], buzzLocked: false, buzzedPlayerId: null },
+            gameState: { questions: [], buzzQueue: [], answeringPlayerId: null },
         });
         return session.save();
     }
@@ -70,17 +69,63 @@ export class GameSessionService {
         );
     }
 
-    async claimBuzz(roomCode: string, socketId: string): Promise<GameSessionDocument | null> {
-        // Atomic update: only update if buzzLocked is false
+    async addToQueue(roomCode: string, socketId: string): Promise<GameSessionDocument | null> {
+        // Atomic push to buzzQueue IF not already in queue and not currently answering
         return this.gameSessionModel.findOneAndUpdate(
-            { roomCode, 'gameState.buzzLocked': false },
             {
-                $set: {
-                    'gameState.buzzLocked': true,
-                    'gameState.buzzedPlayerId': socketId,
-                },
+                roomCode,
+                'gameState.buzzQueue': { $ne: socketId },
+                'gameState.answeringPlayerId': { $ne: socketId },
+            },
+            {
+                $push: { 'gameState.buzzQueue': socketId },
             },
             { new: true },
+        );
+    }
+
+    async popNextPlayer(roomCode: string): Promise<GameSessionDocument | null> {
+        // Find session to get first in queue
+        const session = await this.gameSessionModel.findOne({ roomCode });
+        if (!session || session.gameState.buzzQueue.length === 0) return null;
+
+        const nextPlayerId = session.gameState.buzzQueue[0];
+
+        return this.gameSessionModel.findOneAndUpdate(
+            { roomCode, 'gameState.answeringPlayerId': null },
+            {
+                $set: { 'gameState.answeringPlayerId': nextPlayerId },
+                $pull: { 'gameState.buzzQueue': nextPlayerId },
+            },
+            { new: true },
+        );
+    }
+
+    async judgeAnswer(roomCode: string, isCorrect: boolean, points: number): Promise<GameSessionDocument | null> {
+        const session = await this.gameSessionModel.findOne({ roomCode });
+        if (!session || !session.gameState.answeringPlayerId) return null;
+
+        const playerId = session.gameState.answeringPlayerId;
+        const update: any = {};
+
+        if (isCorrect) {
+            update['$inc'] = { 'players.$[elem].score': points };
+            update['$set'] = {
+                'gameState.answeringPlayerId': null,
+                'gameState.buzzQueue': [],
+            };
+        } else {
+            update['$inc'] = { 'players.$[elem].score': -points };
+            update['$set'] = { 'gameState.answeringPlayerId': null };
+        }
+
+        return this.gameSessionModel.findOneAndUpdate(
+            { roomCode },
+            update,
+            {
+                arrayFilters: [{ 'elem.socketId': playerId }],
+                new: true,
+            },
         );
     }
 
@@ -89,8 +134,8 @@ export class GameSessionService {
             { roomCode },
             {
                 $set: {
-                    'gameState.buzzLocked': false,
-                    'gameState.buzzedPlayerId': null,
+                    'gameState.buzzQueue': [],
+                    'gameState.answeringPlayerId': null,
                 },
             },
             { new: true },
