@@ -12,5 +12,6 @@ import { CategoriesModule } from '../categories/categories.module';
   ],
   controllers: [QuestionsController],
   providers: [QuestionsService],
+  exports: [QuestionsService],
 })
 export class QuestionsModule { }
