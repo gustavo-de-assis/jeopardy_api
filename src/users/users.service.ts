@@ -21,4 +21,12 @@ export class UsersService {
     async findByEmail(email: string): Promise<UserDocument | null> {
         return this.userModel.findOne({ email }).exec();
     }
+
+    async validateUser(nickname: string, password: string): Promise<UserDocument | null> {
+        const user = await this.userModel.findOne({ nickname }).exec();
+        if (user && await bcrypt.compare(password, user.password)) {
+            return user;
+        }
+        return null;
+    }
 }

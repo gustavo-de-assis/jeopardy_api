@@ -53,7 +53,15 @@ export class GameSessionService {
         );
     }
 
-    async addPlayer(roomCode: string, nickname: string, socketId: string): Promise<GameSessionDocument | null> {
+    async addPlayer(roomCode: string, nickname: string, socketId: string, userId?: string): Promise<GameSessionDocument | null> {
+        const session = await this.gameSessionModel.findOne({ roomCode });
+        if (!session) return null;
+
+        if (session.host === userId) {
+            // Host is joining, don't add to players but return the session
+            return session;
+        }
+
         return this.gameSessionModel.findOneAndUpdate(
             { roomCode },
             {

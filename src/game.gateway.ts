@@ -7,6 +7,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { GameSessionService } from './game-session.service';
+import { UsersService } from './users/users.service';
 
 @WebSocketGateway({ cors: true })
 export class GameGateway {
@@ -15,7 +16,68 @@ export class GameGateway {
 
     constructor(
         private gameSessionService: GameSessionService,
+        private usersService: UsersService,
     ) { }
+
+    private pairingCodes = new Map<string, string>(); // code -> webSocketId
+    private webToMobile = new Map<string, string>(); // webSocketId -> mobileSocketId
+
+    @SubscribeMessage('login')
+    async handleLogin(
+        @MessageBody() data: { nickname: string, password: string },
+    ) {
+        const { nickname, password } = data;
+        const user = await this.usersService.validateUser(nickname, password);
+
+        if (user) {
+            return { success: true, userId: user._id, nickname: user.nickname };
+        }
+        return { success: false, message: 'Credenciais inválidas' };
+    }
+
+    @SubscribeMessage('request_pairing')
+    handleRequestPairing(
+        @ConnectedSocket() client: Socket,
+    ) {
+        const code = Math.random().toString(36).substring(2, 6).toUpperCase();
+        this.pairingCodes.set(code, client.id);
+
+        // Cleanup code if socket disconnects
+        client.on('disconnect', () => {
+            this.pairingCodes.delete(code);
+        });
+
+        return { code };
+    }
+
+    @SubscribeMessage('authenticate_web')
+    handleAuthenticateWeb(
+        @MessageBody() data: { code: string, userId: string },
+        @ConnectedSocket() client: Socket,
+    ) {
+        const { code, userId } = data;
+        const webSocketId = this.pairingCodes.get(code);
+
+        if (webSocketId) {
+            this.webToMobile.set(webSocketId, client.id);
+            this.server.to(webSocketId).emit('host_authenticated', { userId });
+            return { success: true };
+        }
+
+        return { success: false, message: 'Invalid or expired pairing code' };
+    }
+
+    @SubscribeMessage('room_created')
+    handleRoomCreated(
+        @MessageBody() data: { roomCode: string },
+        @ConnectedSocket() client: Socket,
+    ) {
+        const { roomCode } = data;
+        const mobileSocketId = this.webToMobile.get(client.id);
+        if (mobileSocketId) {
+            this.server.to(mobileSocketId).emit('join_room_as_host', { roomCode });
+        }
+    }
 
     @SubscribeMessage('join_room')
     async handleJoinRoom(
@@ -25,7 +87,7 @@ export class GameGateway {
         const { roomCode, nickname, userId } = data;
 
         try {
-            const session = await this.gameSessionService.addPlayer(roomCode, nickname, client.id);
+            const session = await this.gameSessionService.addPlayer(roomCode, nickname, client.id, userId);
 
             if (!session) {
                 return { success: false, message: 'Room not found or invalid' };
@@ -34,11 +96,22 @@ export class GameGateway {
             const role = session.host === userId ? 'HOST' : 'PLAYER';
 
             client.join(roomCode);
-            this.server.to(roomCode).emit('player_joined', {
-                nickname,
-                players: session.players,
-                role, // Provide context to listeners
-            });
+
+            // Only emit player_joined if it's actually a player
+            if (role === 'PLAYER') {
+                this.server.to(roomCode).emit('player_joined', {
+                    nickname,
+                    players: session.players,
+                    role,
+                });
+            } else {
+                // For host, maybe just update host about the current players
+                client.emit('player_joined', {
+                    nickname,
+                    players: session.players,
+                    role,
+                });
+            }
 
             return { success: true, message: `Joined room ${roomCode}`, role };
         } catch (error) {
