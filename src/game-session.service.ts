@@ -39,6 +39,10 @@ export class GameSessionService {
         return session.save();
     }
 
+    async getSessionByRoomCode(roomCode: string): Promise<GameSessionDocument | null> {
+        return this.gameSessionModel.findOne({ roomCode });
+    }
+
     async updateCategories(sessionId: string, categoryIds: string[]): Promise<GameSessionDocument | null> {
         const questions = await this.questionsService.findByCategoryIds(categoryIds);
 

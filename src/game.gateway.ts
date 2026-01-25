@@ -164,16 +164,17 @@ export class GameGateway {
         const { roomCode, isCorrect, points } = data;
 
         try {
+            const preSession = await this.gameSessionService.getSessionByRoomCode(roomCode);
+            const answeringPlayerId = preSession?.gameState.answeringPlayerId;
+            const answeringPlayer = preSession?.players.find(p => p.socketId === answeringPlayerId);
+
             const session = await this.gameSessionService.judgeAnswer(roomCode, isCorrect, points);
             if (!session) return { success: false };
 
             if (isCorrect) {
-                const winner = session.players.find(p => p.score > 0); // simplification, better to find by ID
-                // Wait, finding winner by name from session state or last answering id?
-                // The service already set answeringPlayerId to null. 
-                // Let's pass the nickname if possible or just the result.
                 this.server.to(roomCode).emit('round_finished', {
                     result: 'CORRECT',
+                    winner: answeringPlayer?.nickname,
                     players: session.players
                 });
             } else {
