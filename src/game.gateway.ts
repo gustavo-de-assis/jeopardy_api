@@ -199,6 +199,20 @@ export class GameGateway {
         }
     }
 
+    @SubscribeMessage('buzz_timeout')
+    async handleBuzzTimeout(
+        @MessageBody() data: { roomCode: string },
+    ) {
+        const { roomCode } = data;
+        const session = await this.gameSessionService.getSessionByRoomCode(roomCode);
+        if (session) {
+            this.server.to(roomCode).emit('round_finished', {
+                result: 'TIMEOUT_OR_NO_WINNER',
+                players: session.players
+            });
+        }
+    }
+
     @SubscribeMessage('reset_buzz')
     async handleResetBuzz(
         @MessageBody() data: { roomCode: string },
