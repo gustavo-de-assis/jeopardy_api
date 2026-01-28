@@ -23,6 +23,30 @@ export class GameSession {
   @Prop({ default: 'LOBBY' })
   status: 'LOBBY' | 'PLAYING' | 'FINISHED';
 
+  @Prop({
+    type: String,
+    enum: ['IDLE', 'WAGERING', 'ANSWERING', 'JUDGING', 'FINISHED'],
+    default: 'IDLE'
+  })
+  finalJeopardyState: 'IDLE' | 'WAGERING' | 'ANSWERING' | 'JUDGING' | 'FINISHED';
+
+  @Prop([
+    {
+      playerId: { type: String, required: true },
+      wager: { type: Number, default: 0 },
+      answerText: { type: String, default: '' },
+      isCorrect: { type: Boolean, default: false },
+      isRevealed: { type: Boolean, default: false },
+    },
+  ])
+  playerAnswers: {
+    playerId: string;
+    wager: number;
+    answerText: string;
+    isCorrect: boolean;
+    isRevealed: boolean;
+  }[];
+
   @Prop({ type: [{ type: String, ref: 'Category' }] })
   categories: string[];
 
@@ -38,6 +62,7 @@ export class GameSession {
     questions: any[];
     buzzQueue: string[];
     answeringPlayerId: string | null;
+    finalQuestion: any;
   };
 }
 

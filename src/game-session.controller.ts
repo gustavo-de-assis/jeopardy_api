@@ -1,4 +1,4 @@
-import { Controller, Post, Patch, Body, Param } from '@nestjs/common';
+import { Controller, Post, Patch, Get, Body, Param } from '@nestjs/common';
 import { GameSessionService } from './game-session.service';
 
 @Controller('game-sessions')
@@ -16,5 +16,10 @@ export class GameSessionController {
         @Body() data: { categoryIds: string[] },
     ) {
         return this.gameSessionService.updateCategories(id, data.categoryIds);
+    }
+
+    @Get('room/:roomCode')
+    async getByRoomCode(@Param('roomCode') roomCode: string) {
+        return this.gameSessionService.getSessionByRoomCode(roomCode);
     }
 }

@@ -15,6 +15,9 @@ export class Question {
     @Prop({ required: true })
     level: number;
 
+    @Prop({ required: true, enum: ['STANDARD', 'APPROXIMATION'], default: 'STANDARD' })
+    type: string;
+
     @Prop({ type: Types.ObjectId, ref: 'Category', required: true })
     categoryId: Category | Types.ObjectId;
 }

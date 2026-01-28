@@ -240,4 +240,121 @@ export class GameGateway {
         const { roomCode, question } = data;
         this.server.to(roomCode).emit('question_opened', question);
     }
+    @SubscribeMessage('start_final_jeopardy')
+    async handleStartFinalJeopardy(
+        @MessageBody() data: { roomCode: string },
+    ) {
+        const { roomCode } = data;
+        const session = await this.gameSessionService.startFinalJeopardy(roomCode);
+        if (session) {
+            // Check question type to emit correct payload
+            const qType = session.gameState.finalQuestion?.type || 'STANDARD';
+            this.server.to(roomCode).emit('final_phase_started', { questionType: qType });
+        }
+    }
+
+    @SubscribeMessage('submit_wager')
+    async handleSubmitWager(
+        @MessageBody() data: { roomCode: string, amount: number },
+        @ConnectedSocket() client: Socket,
+    ) {
+        const { roomCode, amount } = data;
+        const session = await this.gameSessionService.submitWager(roomCode, client.id, amount);
+
+        if (session) {
+            client.emit('wager_confirmed', { amount });
+
+            // Check if all players have wagered
+            const activePlayers = session.players.length;
+            const wageredPlayers = session.playerAnswers.length;
+
+            if (wageredPlayers >= activePlayers) {
+                this.server.to(roomCode).emit('all_wagers_placed');
+            }
+        }
+    }
+
+    @SubscribeMessage('reveal_final_question')
+    async handleRevealFinalQuestion(
+        @MessageBody() data: { roomCode: string },
+    ) {
+        const { roomCode } = data;
+        const session = await this.gameSessionService.revealFinalQuestion(roomCode);
+        if (session) {
+            this.server.to(roomCode).emit('show_final_question', {
+                text: session.gameState.finalQuestion?.text,
+                duration: 30
+            });
+        }
+    }
+
+    @SubscribeMessage('submit_final_answer')
+    async handleSubmitFinalAnswer(
+        @MessageBody() data: { roomCode: string, text: string },
+        @ConnectedSocket() client: Socket,
+    ) {
+        const { roomCode, text } = data;
+        await this.gameSessionService.submitFinalAnswer(roomCode, client.id, text);
+        // Maybe emit to host that a player answered? For now silent.
+    }
+
+    @SubscribeMessage('start_judging')
+    async handleStartJudging(
+        @MessageBody() data: { roomCode: string },
+    ) {
+        const { roomCode } = data;
+        await this.gameSessionService.startJudging(roomCode);
+        this.server.to(roomCode).emit('judging_phase_started');
+    }
+
+    @SubscribeMessage('reveal_answer_to_room')
+    async handleRevealAnswerToRoom(
+        @MessageBody() data: { roomCode: string, playerId: string },
+    ) {
+        const { roomCode, playerId } = data;
+        const session = await this.gameSessionService.revealAnswerToRoom(roomCode, playerId);
+        if (session) {
+            const answer = session.playerAnswers.find(pa => pa.playerId === playerId);
+            if (answer) {
+                this.server.to(roomCode).emit('answer_revealed_on_board', {
+                    playerId,
+                    answerText: answer.answerText
+                });
+            }
+        }
+    }
+
+    @SubscribeMessage('resolve_approximation_winner')
+    async handleResolveApproximationWinner(
+        @MessageBody() data: { roomCode: string, winnerPlayerId: string },
+    ) {
+        const { roomCode, winnerPlayerId } = data;
+        const session = await this.gameSessionService.resolveApproximation(roomCode, winnerPlayerId);
+
+        if (session) {
+            const leaderboard = session.players
+                .map(p => ({ nickname: p.nickname, score: p.score }))
+                .sort((a, b) => b.score - a.score)
+                .map((p, index) => ({ ...p, rank: index + 1 }));
+
+            this.server.to(roomCode).emit('game_over', { leaderboard });
+        }
+    }
+
+    @SubscribeMessage('resolve_standard_round')
+    async handleResolveStandardRound(
+        @MessageBody() data: { roomCode: string, results: { playerId: string, isCorrect: boolean }[] },
+    ) {
+        const { roomCode, results } = data;
+        const session = await this.gameSessionService.resolveStandard(roomCode, results);
+
+        if (session) {
+            const leaderboard = session.players
+                .map(p => ({ nickname: p.nickname, score: p.score }))
+                .sort((a, b) => b.score - a.score)
+                .map((p, index) => ({ ...p, rank: index + 1 }));
+
+            this.server.to(roomCode).emit('game_over', { leaderboard });
+        }
+    }
 }

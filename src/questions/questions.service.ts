@@ -27,6 +27,14 @@ export class QuestionsService {
             .exec();
     }
 
+    async getRandomFinalQuestion(): Promise<QuestionDocument | null> {
+        const count = await this.questionModel.countDocuments({ level: 6 }).exec();
+        if (count === 0) return null;
+
+        const random = Math.floor(Math.random() * count);
+        return this.questionModel.findOne({ level: 6 }).skip(random).exec();
+    }
+
     async smartSeed(): Promise<string> {
         const historia = await this.categoriesService.findByName('História');
         const ciencia = await this.categoriesService.findByName('Ciência');

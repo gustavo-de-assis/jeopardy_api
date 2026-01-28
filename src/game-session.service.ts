@@ -40,17 +40,19 @@ export class GameSessionService {
     }
 
     async getSessionByRoomCode(roomCode: string): Promise<GameSessionDocument | null> {
-        return this.gameSessionModel.findOne({ roomCode });
+        return this.gameSessionModel.findOne({ roomCode }).populate('categories').exec();
     }
 
     async updateCategories(sessionId: string, categoryIds: string[]): Promise<GameSessionDocument | null> {
         const questions = await this.questionsService.findByCategoryIds(categoryIds);
+        const finalQuestion = await this.questionsService.getRandomFinalQuestion();
 
         return this.gameSessionModel.findByIdAndUpdate(
             sessionId,
             {
                 categories: categoryIds,
                 'gameState.questions': questions,
+                'gameState.finalQuestion': finalQuestion,
                 status: 'PLAYING',
             },
             { new: true },
@@ -158,6 +160,126 @@ export class GameSessionService {
                     'gameState.answeringPlayerId': null,
                 },
             },
+            { new: true },
+        );
+    }
+
+    async startFinalJeopardy(roomCode: string): Promise<GameSessionDocument | null> {
+        return this.gameSessionModel.findOneAndUpdate(
+            { roomCode },
+            {
+                $set: {
+                    finalJeopardyState: 'WAGERING',
+                    playerAnswers: []
+                }
+            },
+            { new: true },
+        );
+    }
+
+    async submitWager(roomCode: string, playerId: string, amount: number): Promise<GameSessionDocument | null> {
+        const session = await this.gameSessionModel.findOne({ roomCode });
+        if (!session) return null;
+
+        const player = session.players.find(p => p.socketId === playerId);
+        if (!player || amount < 0 || amount > player.score) return null;
+
+        // Check if player already wagered to update or insert
+        const existingEntryIndex = session.playerAnswers.findIndex(pa => pa.playerId === playerId);
+
+        if (existingEntryIndex > -1) {
+            session.playerAnswers[existingEntryIndex].wager = amount;
+        } else {
+            session.playerAnswers.push({
+                playerId,
+                wager: amount,
+                answerText: '',
+                isCorrect: false,
+                isRevealed: false
+            });
+        }
+
+        return session.save();
+    }
+
+    async revealFinalQuestion(roomCode: string): Promise<GameSessionDocument | null> {
+        return this.gameSessionModel.findOneAndUpdate(
+            { roomCode },
+            { $set: { finalJeopardyState: 'ANSWERING' } },
+            { new: true },
+        );
+    }
+
+    async submitFinalAnswer(roomCode: string, playerId: string, text: string): Promise<GameSessionDocument | null> {
+        return this.gameSessionModel.findOneAndUpdate(
+            { roomCode, 'playerAnswers.playerId': playerId },
+            { $set: { 'playerAnswers.$.answerText': text } },
+            { new: true },
+        );
+    }
+
+    async startJudging(roomCode: string): Promise<GameSessionDocument | null> {
+        return this.gameSessionModel.findOneAndUpdate(
+            { roomCode },
+            { $set: { finalJeopardyState: 'JUDGING' } },
+            { new: true },
+        );
+    }
+
+    async revealAnswerToRoom(roomCode: string, playerId: string): Promise<GameSessionDocument | null> {
+        return this.gameSessionModel.findOneAndUpdate(
+            { roomCode, 'playerAnswers.playerId': playerId },
+            { $set: { 'playerAnswers.$.isRevealed': true } },
+            { new: true },
+        );
+    }
+
+    async resolveApproximation(roomCode: string, winnerId: string): Promise<GameSessionDocument | null> {
+        const session = await this.gameSessionModel.findOne({ roomCode });
+        if (!session) return null;
+
+        session.playerAnswers.forEach(pa => {
+            const playerIndex = session.players.findIndex(p => p.socketId === pa.playerId);
+            if (playerIndex > -1) {
+                if (pa.playerId === winnerId) {
+                    session.players[playerIndex].score += pa.wager;
+                } else {
+                    session.players[playerIndex].score -= pa.wager;
+                }
+            }
+        });
+
+        session.finalJeopardyState = 'FINISHED';
+        session.status = 'FINISHED';
+        return session.save();
+    }
+
+    async resolveStandard(roomCode: string, results: { playerId: string, isCorrect: boolean }[]): Promise<GameSessionDocument | null> {
+        const session = await this.gameSessionModel.findOne({ roomCode });
+        if (!session) return null;
+
+        results.forEach(res => {
+            const pa = session.playerAnswers.find(a => a.playerId === res.playerId);
+            const playerIndex = session.players.findIndex(p => p.socketId === res.playerId);
+
+            if (pa && playerIndex > -1) {
+                if (res.isCorrect) {
+                    session.players[playerIndex].score += pa.wager;
+                } else {
+                    session.players[playerIndex].score -= pa.wager;
+                }
+            }
+        });
+
+        session.finalJeopardyState = 'FINISHED';
+        session.status = 'FINISHED';
+        return session.save();
+    }
+
+    async endGame(roomCode: string): Promise<GameSessionDocument | null> {
+        return this.gameSessionModel.findOneAndUpdate(
+            { roomCode },
+            { $set: { status: 'FINISHED', finalJeopardyState: 'FINISHED' } },
             { new: true },
         );
     }
