@@ -55,8 +55,9 @@ export class GameSession {
       questions: [{ type: Object }],
       buzzQueue: [{ type: String }],
       answeringPlayerId: { type: String, default: null },
+      finalQuestion: { type: Object, default: null },
     },
-    default: { questions: [], buzzQueue: [], answeringPlayerId: null },
+    default: { questions: [], buzzQueue: [], answeringPlayerId: null, finalQuestion: null },
   })
   gameState: {
     questions: any[];

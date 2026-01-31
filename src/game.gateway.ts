@@ -316,7 +316,7 @@ export class GameGateway {
         const session = await this.gameSessionService.submitWager(roomCode, client.id, amount);
 
         if (session) {
-            client.emit('wager_confirmed', { amount });
+            this.server.to(roomCode).emit('wager_confirmed', { playerId: client.id, amount });
 
             // Check if all players have wagered
             const activePlayers = session.players.length;
@@ -336,7 +336,7 @@ export class GameGateway {
         const session = await this.gameSessionService.revealFinalQuestion(roomCode);
         if (session) {
             this.server.to(roomCode).emit('show_final_question', {
-                text: session.gameState.finalQuestion?.text,
+                questionText: session.gameState.finalQuestion?.text ?? 'Pergunta não encontrada',
                 duration: 30
             });
         }
@@ -360,12 +360,20 @@ export class GameGateway {
         const session = await this.gameSessionService.startJudging(roomCode);
         if (session) {
             this.server.to(roomCode).emit('judging_phase_started', {
-                playerAnswers: session.playerAnswers,
-                correctAnswer: session.gameState.finalQuestion.answer,
-                questionType: session.gameState.finalQuestion.type,
+                playerAnswers: session.playerAnswers ?? [],
+                correctAnswer: session.gameState.finalQuestion?.answer ?? 'N/A',
+                questionType: session.gameState.finalQuestion?.type ?? 'STANDARD',
                 players: session.players
             });
         }
+    }
+
+    @SubscribeMessage('reveal_correct_answer')
+    async handleRevealCorrectAnswer(
+        @MessageBody() data: { roomCode: string },
+    ) {
+        const { roomCode } = data;
+        this.server.to(roomCode).emit('correct_answer_revealed', { revealed: true });
     }
 
     @SubscribeMessage('reveal_answer_to_room')
