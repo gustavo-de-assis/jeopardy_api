@@ -35,6 +35,24 @@ export class QuestionsService {
         return this.questionModel.findOne({ level: 6 }).skip(random).exec();
     }
 
+    async getRandomFinalQuestionByCategory(categoryId: string): Promise<QuestionDocument | null> {
+        const count = await this.questionModel.countDocuments({
+            level: 6,
+            categoryId: new Types.ObjectId(categoryId)
+        }).exec();
+
+        if (count === 0) {
+            // Fallback to any final question if none found for this category
+            return this.getRandomFinalQuestion();
+        }
+
+        const random = Math.floor(Math.random() * count);
+        return this.questionModel.findOne({
+            level: 6,
+            categoryId: new Types.ObjectId(categoryId)
+        }).skip(random).exec();
+    }
+
     async smartSeed(): Promise<string> {
         const historia = await this.categoriesService.findByName('História');
         const ciencia = await this.categoriesService.findByName('Ciência');

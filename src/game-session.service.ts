@@ -202,6 +202,14 @@ export class GameSessionService {
         return session.save();
     }
 
+    async setFinalQuestion(roomCode: string, question: any): Promise<GameSessionDocument | null> {
+        return this.gameSessionModel.findOneAndUpdate(
+            { roomCode },
+            { $set: { 'gameState.finalQuestion': question } },
+            { new: true },
+        );
+    }
+
     async revealFinalQuestion(roomCode: string): Promise<GameSessionDocument | null> {
         return this.gameSessionModel.findOneAndUpdate(
             { roomCode },
@@ -234,14 +242,14 @@ export class GameSessionService {
         );
     }
 
-    async resolveApproximation(roomCode: string, winnerId: string): Promise<GameSessionDocument | null> {
+    async resolveApproximation(roomCode: string, winnerIds: string[]): Promise<GameSessionDocument | null> {
         const session = await this.gameSessionModel.findOne({ roomCode });
         if (!session) return null;
 
         session.playerAnswers.forEach(pa => {
             const playerIndex = session.players.findIndex(p => p.socketId === pa.playerId);
             if (playerIndex > -1) {
-                if (pa.playerId === winnerId) {
+                if (winnerIds.includes(pa.playerId)) {
                     session.players[playerIndex].score += pa.wager;
                 } else {
                     session.players[playerIndex].score -= pa.wager;

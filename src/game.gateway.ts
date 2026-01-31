@@ -8,6 +8,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { GameSessionService } from './game-session.service';
 import { UsersService } from './users/users.service';
+import { QuestionsService } from './questions/questions.service';
 
 @WebSocketGateway({ cors: true })
 export class GameGateway {
@@ -17,6 +18,7 @@ export class GameGateway {
     constructor(
         private gameSessionService: GameSessionService,
         private usersService: UsersService,
+        private questionsService: QuestionsService,
     ) { }
 
     private pairingCodes = new Map<string, string>(); // code -> webSocketId
@@ -205,7 +207,11 @@ export class GameGateway {
     ) {
         const { roomCode } = data;
         const session = await this.gameSessionService.getSessionByRoomCode(roomCode);
-        if (session) {
+        if (!session) return;
+
+        // ONLY finish the round if no one is in queue and no one is answering.
+        // Otherwise, the 10s timer just means the "entry window" is closed.
+        if (session.gameState.buzzQueue.length === 0 && session.gameState.answeringPlayerId === null) {
             this.server.to(roomCode).emit('round_finished', {
                 result: 'TIMEOUT_OR_NO_WINNER',
                 players: session.players
@@ -240,16 +246,64 @@ export class GameGateway {
         const { roomCode, question } = data;
         this.server.to(roomCode).emit('question_opened', question);
     }
+    @SubscribeMessage('select_final_category')
+    async handleSelectFinalCategory(
+        @MessageBody() data: { roomCode: string, categoryId: string, categoryName: string },
+    ) {
+        const { roomCode, categoryId, categoryName } = data;
+
+        try {
+            const question = await this.questionsService.getRandomFinalQuestionByCategory(categoryId);
+            if (question) {
+                await this.gameSessionService.setFinalQuestion(roomCode, question);
+
+                this.server.to(roomCode).emit('final_category_selected', {
+                    categoryName,
+                    questionType: question.type
+                });
+            }
+            return { success: true };
+        } catch (error) {
+            console.error(error);
+            return { success: false, message: 'Failed to select final category' };
+        }
+    }
+
     @SubscribeMessage('start_final_jeopardy')
     async handleStartFinalJeopardy(
         @MessageBody() data: { roomCode: string },
     ) {
         const { roomCode } = data;
-        const session = await this.gameSessionService.startFinalJeopardy(roomCode);
-        if (session) {
-            // Check question type to emit correct payload
-            const qType = session.gameState.finalQuestion?.type || 'STANDARD';
-            this.server.to(roomCode).emit('final_phase_started', { questionType: qType });
+        let session = await this.gameSessionService.getSessionByRoomCode(roomCode);
+
+        if (!session) return;
+
+        // Check if at least 2 players have score > 0
+        const eligiblePlayers = session.players.filter(p => p.score > 0);
+
+        if (eligiblePlayers.length < 2) {
+            // End game immediately
+            await this.gameSessionService.endGame(roomCode);
+            const updatedSession = await this.gameSessionService.getSessionByRoomCode(roomCode);
+            if (updatedSession) {
+                const leaderboard = updatedSession.players
+                    .map(p => ({ nickname: p.nickname, score: p.score }))
+                    .sort((a, b) => b.score - a.score)
+                    .map((p, index) => ({ ...p, rank: index + 1 }));
+
+                this.server.to(roomCode).emit('game_over', { leaderboard });
+            }
+            return;
+        }
+
+        await this.gameSessionService.startFinalJeopardy(roomCode);
+        const finalSession = await this.gameSessionService.getSessionByRoomCode(roomCode);
+
+        if (finalSession) {
+            this.server.to(roomCode).emit('final_phase_started', {
+                categories: finalSession.categories,
+                players: finalSession.players
+            });
         }
     }
 
@@ -303,8 +357,15 @@ export class GameGateway {
         @MessageBody() data: { roomCode: string },
     ) {
         const { roomCode } = data;
-        await this.gameSessionService.startJudging(roomCode);
-        this.server.to(roomCode).emit('judging_phase_started');
+        const session = await this.gameSessionService.startJudging(roomCode);
+        if (session) {
+            this.server.to(roomCode).emit('judging_phase_started', {
+                playerAnswers: session.playerAnswers,
+                correctAnswer: session.gameState.finalQuestion.answer,
+                questionType: session.gameState.finalQuestion.type,
+                players: session.players
+            });
+        }
     }
 
     @SubscribeMessage('reveal_answer_to_room')
@@ -324,12 +385,12 @@ export class GameGateway {
         }
     }
 
-    @SubscribeMessage('resolve_approximation_winner')
-    async handleResolveApproximationWinner(
-        @MessageBody() data: { roomCode: string, winnerPlayerId: string },
+    @SubscribeMessage('resolve_approximation_winners')
+    async handleResolveApproximationWinners(
+        @MessageBody() data: { roomCode: string, winnerPlayerIds: string[] },
     ) {
-        const { roomCode, winnerPlayerId } = data;
-        const session = await this.gameSessionService.resolveApproximation(roomCode, winnerPlayerId);
+        const { roomCode, winnerPlayerIds } = data;
+        const session = await this.gameSessionService.resolveApproximation(roomCode, winnerPlayerIds);
 
         if (session) {
             const leaderboard = session.players

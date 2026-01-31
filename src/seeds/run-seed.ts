@@ -3,6 +3,7 @@ import { CategorySchema } from 'src/schemas/category.schema';
 import { QuestionSchema } from 'src/schemas/question.schema';
 import { categories } from './categories.seed';
 import { buildQuestions } from './questions.seed';
+import { FINAL_QUESTIONS } from './final-jeopardy.seed';
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/jeopardy';
 
@@ -29,6 +30,7 @@ async function runSeed() {
     console.log('🌱 Inserindo perguntas...');
     const questions = buildQuestions(categoryMap);
     await Question.insertMany(questions);
+    await Question.insertMany(FINAL_QUESTIONS(categoryMap));
 
     await mongoose.disconnect();
     console.log('✅ Seed finalizado com sucesso');
