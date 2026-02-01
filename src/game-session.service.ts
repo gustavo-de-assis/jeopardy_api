@@ -158,8 +158,17 @@ export class GameSessionService {
                 $set: {
                     'gameState.buzzQueue': [],
                     'gameState.answeringPlayerId': null,
+                    'gameState.isBuzzerWindowOpen': false,
                 },
             },
+            { new: true },
+        );
+    }
+
+    async setBuzzerWindowStatus(roomCode: string, isOpen: boolean): Promise<GameSessionDocument | null> {
+        return this.gameSessionModel.findOneAndUpdate(
+            { roomCode },
+            { $set: { 'gameState.isBuzzerWindowOpen': isOpen } },
             { new: true },
         );
     }

@@ -146,11 +146,18 @@ export class GameGateway {
                         socketId: player?.socketId
                     });
                 }
-            } else {
                 // Anyone already answering, notify position in queue
                 const position = session.gameState.buzzQueue.indexOf(client.id) + 1;
                 client.emit('queue_updated', { position });
             }
+
+            // Re-fetch to get accurate answeringPlayerId from the popNextPlayer call if it happened
+            const currentSession = await this.gameSessionService.getSessionByRoomCode(roomCode);
+
+            // Always broadcast total queue count (including whoever is answering) to the room
+            this.server.to(roomCode).emit('queue_count_updated', {
+                count: (currentSession?.gameState.buzzQueue.length || 0) + (currentSession?.gameState.answeringPlayerId ? 1 : 0)
+            });
 
             return { success: true, message: 'Buzz registered' };
         } catch (error) {
@@ -182,6 +189,12 @@ export class GameGateway {
             } else {
                 // Incorrect: try to pop next one
                 const nextSession = await this.gameSessionService.popNextPlayer(roomCode);
+
+                // Broadcast updated queue count
+                this.server.to(roomCode).emit('queue_count_updated', {
+                    count: nextSession ? (nextSession.gameState.buzzQueue.length + (nextSession.gameState.answeringPlayerId ? 1 : 0)) : 0
+                });
+
                 if (nextSession && nextSession.gameState.answeringPlayerId) {
                     const nextPlayer = nextSession.players.find(p => p.socketId === nextSession.gameState.answeringPlayerId);
                     this.server.to(roomCode).emit('player_answering', {
@@ -189,11 +202,17 @@ export class GameGateway {
                         socketId: nextPlayer?.socketId
                     });
                 } else {
-                    // No more players in queue
-                    this.server.to(roomCode).emit('round_finished', {
-                        result: 'TIMEOUT_OR_NO_WINNER',
-                        players: nextSession?.players || session.players
-                    });
+                    // No more players in queue. 
+                    // Should we finish? ONLY if the 10s window is ALREADY CLOSED.
+                    if (nextSession && !nextSession.gameState.isBuzzerWindowOpen) {
+                        this.server.to(roomCode).emit('round_finished', {
+                            result: 'TIMEOUT_OR_NO_WINNER',
+                            players: nextSession.players
+                        });
+                    } else {
+                        // Window still open, wait for more buzzes. Notify clients to show "AGUARDANDO BUZZ"
+                        this.server.to(roomCode).emit('buzz_reset');
+                    }
                 }
             }
         } catch (error) {
@@ -206,7 +225,7 @@ export class GameGateway {
         @MessageBody() data: { roomCode: string },
     ) {
         const { roomCode } = data;
-        const session = await this.gameSessionService.getSessionByRoomCode(roomCode);
+        const session = await this.gameSessionService.setBuzzerWindowStatus(roomCode, false);
         if (!session) return;
 
         // ONLY finish the round if no one is in queue and no one is answering.
@@ -244,6 +263,7 @@ export class GameGateway {
         @MessageBody() data: { roomCode: string, question: any },
     ) {
         const { roomCode, question } = data;
+        await this.gameSessionService.setBuzzerWindowStatus(roomCode, true);
         this.server.to(roomCode).emit('question_opened', question);
     }
     @SubscribeMessage('select_final_category')

@@ -56,14 +56,16 @@ export class GameSession {
       buzzQueue: [{ type: String }],
       answeringPlayerId: { type: String, default: null },
       finalQuestion: { type: Object, default: null },
+      isBuzzerWindowOpen: { type: Boolean, default: false },
     },
-    default: { questions: [], buzzQueue: [], answeringPlayerId: null, finalQuestion: null },
+    default: { questions: [], buzzQueue: [], answeringPlayerId: null, finalQuestion: null, isBuzzerWindowOpen: false },
   })
   gameState: {
     questions: any[];
     buzzQueue: string[];
     answeringPlayerId: string | null;
     finalQuestion: any;
+    isBuzzerWindowOpen: boolean;
   };
 }
 
